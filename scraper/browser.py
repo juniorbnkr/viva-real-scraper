@@ -31,6 +31,9 @@ class Browser:
     def __init__(self):
         self = self
         options = Options()
+        self.db_user=os.environ.get('vivadb_user')
+        self.db_server=os.environ.get('vivadb_server')
+        self.db_pass=os.environ.get('vivadb_pass')
         if not local_test:
             options = webdriver.ChromeOptions()
             options.add_argument("--headless")
@@ -108,10 +111,7 @@ class Browser:
             return False
 
     def extract_infos(self,filename):
-        db_user=os.environ.get('vivadb_user')
-        db_server=os.environ.get('vivadb_server')
-        db_pass=os.environ.get('vivadb_pass')
-        sqlEngine       = create_engine(f'mysql+pymysql://{db_user}:@{db_server}/viva_real?password={db_pass}', pool_recycle=3600)
+        sqlEngine       = create_engine(f'mysql+pymysql://{self.db_user}:@{self.db_server}/viva_real?password={self.db_pass}', pool_recycle=3600)
         dbConnection    = sqlEngine.connect()
         df = pd.read_sql("SELECT * FROM viva_real.imoveis where monitorar = 0",dbConnection)
 
@@ -228,7 +228,7 @@ class Browser:
             
             #preços
             try:
-                preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-sale").text)
+                preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-rent").text)
             except:
                 preco = -1
             try:
@@ -270,4 +270,31 @@ class Browser:
         self.driver.quit()
             
         return True     
- 
+
+    def fix_price(self):
+        sqlEngine       = create_engine(f'mysql+pymysql://{self.db_user}:@{self.db_server}/viva_real?password={self.db_pass}', pool_recycle=3600)
+        dbConnection    = sqlEngine.connect()
+        df = pd.read_sql("SELECT * FROM viva_real.imoveis i \
+                        left join precos p ON p.id_imovel = i.id  where p.preco > 50000 and p.preco <100000 LIMIT 500",dbConnection)
+
+        for index, row in df.iterrows():
+            self.driver.get(row["url"])
+            time.sleep(5)
+            #preços
+            try:
+                preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-rent").text)
+                sql = f"""
+                    UPDATE viva_real.precos
+                    SET preco = {preco}
+                    WHERE id_imovel = {row['id_imovel']}
+                """
+                dbConnection.execute(sql)
+                print(row["preco"],row['id_imovel'])
+                print(f"    novo p: {preco}")
+
+            except Exception as e:
+                preco = -1
+                # print(e)
+
+        self.driver.quit()
+        return True
