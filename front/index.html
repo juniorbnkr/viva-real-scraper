@@ -1,0 +1,50 @@
+<head><title>{{.Details.Title}}</title>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC8Wmv7MogG2W64mFw56PqiTVUVkSfrXZ4&callback=myMap"></script>
+
+</head>
+
+<body>
+ <h1>{{.Details.Title}}</h1>
+
+<div id="googleMap" style="width:100%;height:400px;"></div>
+
+<script>
+  
+  var marks = [
+  {{range $key,$value := .Results -}}
+  [{{$value.Url}},{{$value.Lat}},{{$value.Lon}},{{$value.Preco}}],
+  {{end}}
+  ]
+
+  var map = new google.maps.Map(document.getElementById('googleMap'), {
+      zoom: 11,
+      center: new google.maps.LatLng(-23.533773,-46.625290),
+      mapTypeId: google.maps.MapTypeId.ROADMAP
+    });
+    
+    var infowindow = new google.maps.InfoWindow();
+
+    var marker, i;
+    
+    for (i = 0; i < marks.length; i++) {  
+      marker = new google.maps.Marker({
+        position: new google.maps.LatLng(marks[i][1], marks[i][2]),
+        map: map
+      });
+      
+      google.maps.event.addListener(marker, 'click', (function(marker, i) {
+        return function() {
+          infowindow.setContent(`<a href='`+marks[i][0]+`' target='_blank'>
+            
+            <br><br>
+            <b>Preço: `+marks[i][3]+`</b> 
+            </a>`);
+          infowindow.open(map, marker);
+        }
+      })(marker, i));
+    }
+</script>
+
+
+</body>
+</html>
