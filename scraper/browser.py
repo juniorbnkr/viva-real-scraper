@@ -21,7 +21,7 @@ ch.setFormatter(utils.CustomFormatter())
 logger.addHandler(ch)
 
 
-if os.uname()[1] in ("JEITTO0012L"):
+if os.uname()[1] in ("cktta","JEITTO0012L","luiz.vieira"):
     local_test = True
 else:    
     local_test = False
@@ -62,15 +62,15 @@ class Browser:
             self.driver = webdriver.Firefox(profile,options=options,executable_path="/geckodriver")
             # self.driver.set_window_size(360,640)
 
-    def list_all_to_csv(self,url):
+    def list_all_to_csv(self,url,bairro):
         try:
             self.driver.get(url)
             self.driver.get_screenshot_as_file("screenshot.png")
             logger.info(" INICIALIZADO ")
-            time.sleep(2)
+            time.sleep(8)
             total_imoveis = int(self.driver.find_element(By.CLASS_NAME,"js-total-records").text.replace(".",""))
             logger.info(f"Listando {total_imoveis} imoveis... [{total_imoveis/35} paginacoes esperadas]")
-            filename = f'imoveis-{total_imoveis}-{datetime.datetime.now().strftime("%m%d%Y_%H:%M:%S")}.csv' 
+            filename = f'{bairro}-{total_imoveis}-{datetime.datetime.now().strftime("%m%d%Y_%H:%M:%S")}.csv' 
 
             file = open(filename, 'w')
 
@@ -103,7 +103,7 @@ class Browser:
             for row in open(filename):
                 rowcount+= 1
             logger.info(f" listagem finalizada. {rowcount} imoveis registrados no arquivo {filename}")
-
+            time.sleep(1)
             return filename       
 
         except Exception as e:
@@ -117,23 +117,30 @@ class Browser:
 
         df_csv = pd.read_csv(filename,header=None)
         df_csv = df_csv.drop_duplicates()
-
+        logger.info(filename)
         for index, row in df_csv.iterrows():
-            if row[0] in df['id'].values:
+            if row[0] in df['id'].values or not row[0] > 0:
                 continue
 
             self.driver.get(row[1])
-            time.sleep(3)
+            time.sleep(4)
             
             try:
                 self.driver.find_element(By.CLASS_NAME,"js-external-id").text
             except:
                 logger.warning(f"inactive - {row[0]}")
                 continue
-            scripts=self.driver.find_elements(By.TAG_NAME,'script')
-            for i in scripts:
-                if 'lat:' in i.get_attribute("innerHTML"):
-                    infos_text = i.get_attribute("innerHTML")
+            
+            infos_text=''
+            while infos_text == '':
+                scripts=self.driver.find_elements(By.TAG_NAME,'script')
+                for i in scripts:
+                    try:
+                        if 'lat:' in i.get_attribute("innerHTML"):
+                            infos_text = i.get_attribute("innerHTML")
+                    except:
+                        time.sleep(1)
+                        pass
             try:
                 lat=infos_text.split("lat: ")[1].split("lon: ")[0].replace(",\n","").replace(" ","").replace("'","")
                 lon=infos_text.split("lon: ")[1].split("},")[0].replace(",\n","").replace(" ","").replace("'","")
@@ -230,7 +237,10 @@ class Browser:
             try:
                 preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-rent").text)
             except:
-                preco = -1
+                try:
+                    preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-sale").text)
+                except:
+                    preco = -1
             try:
                 preco_condominio = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-condominium").text)
             except:
@@ -239,7 +249,7 @@ class Browser:
                 iptu = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-iptu").text)
             except:
                 iptu = -1
-            
+            ''
             data = {
                 'id_imovel':row[0],
                 'preco':preco,
@@ -267,33 +277,55 @@ class Browser:
 
             time.sleep(2)
 
-        self.driver.quit()
+        logger.info(filename+'FINALIZADO')
+        os.remove(filename) 
             
-        return True     
-
-    def fix_price(self):
+        return True 
+        
+    def quit(self):
+        quit = self.driver.quit()
+        return quit
+    
+    def fix_infos(self,info):
         sqlEngine       = create_engine(f'mysql+pymysql://{self.db_user}:@{self.db_server}/viva_real?password={self.db_pass}', pool_recycle=3600)
         dbConnection    = sqlEngine.connect()
-        df = pd.read_sql("SELECT * FROM viva_real.imoveis i \
-                        left join precos p ON p.id_imovel = i.id  where p.preco > 50000 and p.preco <100000 LIMIT 500",dbConnection)
+        df = pd.read_sql("SELECT i.id,i.url FROM viva_real.imoveis i \
+                        left join precos p ON p.id_imovel = i.id  where i.data_cadastro < '2022-12-13 15:50:13' limit 500",dbConnection)
 
         for index, row in df.iterrows():
             self.driver.get(row["url"])
-            time.sleep(5)
+            time.sleep(8)
             #preços
             try:
-                preco = utils.check_int(self.driver.find_element(By.CLASS_NAME,"js-price-rent").text)
+                infos_text=''
+                while infos_text == '':
+                    scripts=self.driver.find_elements(By.TAG_NAME,'script')
+                    for i in scripts:
+                        try:
+                            if 'lat:' in i.get_attribute("innerHTML"):
+                                infos_text = i.get_attribute("innerHTML")
+                        except:
+                            time.sleep(1)
+                            pass
+                try:
+                    lat=infos_text.split("lat: ")[1].split("lon: ")[0].replace(",\n","").replace(" ","").replace("'","")
+                    lon=infos_text.split("lon: ")[1].split("},")[0].replace(",\n","").replace(" ","").replace("'","")
+                except:
+                    lat=0
+                    lon=0
                 sql = f"""
-                    UPDATE viva_real.precos
-                    SET preco = {preco}
-                    WHERE id_imovel = {row['id_imovel']}
+                    UPDATE viva_real.imoveis
+                    SET lat = {lat}, lon = {lon}
+                    WHERE id = {row['id']}
                 """
+                print(sql)
                 dbConnection.execute(sql)
-                print(row["preco"],row['id_imovel'])
-                print(f"    novo p: {preco}")
+                print(row['lat'],row['id'])
+                print(f"    novo: {data}")
 
             except Exception as e:
-                preco = -1
+                print(info,row['id'])
+                pass
                 # print(e)
 
         self.driver.quit()

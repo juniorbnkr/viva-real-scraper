@@ -24,7 +24,7 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
     
 def check_int(v):
-    v = v.replace("R$ ","").replace("/Mês","").replace("/mês","").replace(".","").replace("/ano",'').replace("/semana","")
+    v = v.replace("R$ ","").replace("/Mês","").replace("/mês","").replace(".","").replace("/ano",'').replace("/semana","").replace("/dia","")
     if v in ("Não",'Não informado'):
         return -1
     else:
